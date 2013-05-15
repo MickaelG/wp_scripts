@@ -2,13 +2,42 @@
 import urllib.request, urllib.parse
 import json
 
+import sqlite3
+import pickle
+import os
+class DbIf:
+    def __init__(self, filename):
+        new_db = not os.path.exists(filename)
+        self.sqlcon = sqlite3.connect(filename)
+        if new_db:
+            self._create_tables()
+    def _create_tables(self):
+        self.sqlcon.execute("create table links (article text primary key, link_list blob)")
+        self.sqlcon.commit()
+    def write_links(self, article, link_list):
+        self.sqlcon.execute("insert into links values (?,?)", (article, pickle.dumps(link_list)))
+        self.sqlcon.commit()
+    def read_links(self, article):
+        result = self.sqlcon.execute("select * from links where article=?", (article,)).fetchone()
+        if result == None:
+            return None
+        else:
+            return pickle.loads(result[1])
+
 class MwApiInterface:
-    def __init__(self, api_addr, debug=False):
+    def __init__(self, api_addr, db_filename=None, debug=False):
         self.api = api_addr
         self.debug = debug
+        if db_filename:
+            self.dbif = DbIf(db_filename)
+        else:
+            self.dbif = None
     def _request (self, data):
         dataenc = urllib.parse.urlencode(data)
-        f = urllib.request.urlopen(self.api + "?" + dataenc)
+        req_addr = self.api + "?" + dataenc
+        if self.debug:
+            print ("Request to api address: " + req_addr)
+        f = urllib.request.urlopen(req_addr)
         raw_result = f.read()
         result = json.loads(raw_result.decode('utf-8'))
         return result
@@ -30,15 +59,23 @@ class MwApiInterface:
         """
         returns a list of all internal links in a page
         """
-        result = self.raw_query_request( {'titles':title, 'prop':'links', 'plnamespace':namespace, 'pllimit':500} )
-        if self.debug:
-            print ("Result: " + str(result) )
-        pages = result['query']['pages']
-        page_id = list(pages)[0]
-        if page_id == '-1': #Page does not exist
-            return []
+        if self.dbif:
+            result = self.dbif.read_links(title)
         else:
-            return [link['title'] for link in pages[page_id]['links']]
+            result = None
+        if result == None:
+            result = self.raw_query_request( {'titles':title, 'prop':'links', 'plnamespace':namespace, 'pllimit':500} )
+            if self.debug:
+                print ("Result: " + str(result) )
+            pages = result['query']['pages']
+            page_id = list(pages)[0]
+            if page_id == '-1': #Page does not exist
+                result = []
+            else:
+                result = [link['title'] for link in pages[page_id]['links']]
+            if self.dbif:
+                self.dbif.write_links(title, result)
+        return result
     def get_page_categories (self, title, namespace=0):
         """
         returns a list of all categories of a page
