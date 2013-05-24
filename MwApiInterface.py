@@ -13,12 +13,22 @@ class DbIf:
             self._create_tables()
     def _create_tables(self):
         self.sqlcon.execute("create table links (article text primary key, link_list blob)")
+        self.sqlcon.execute("create table categories (article text primary key, categ_list blob)")
         self.sqlcon.commit()
     def write_links(self, article, link_list):
         self.sqlcon.execute("insert into links values (?,?)", (article, pickle.dumps(link_list)))
         self.sqlcon.commit()
+    def write_categories(self, article, categ_list):
+        self.sqlcon.execute("insert into categories values (?,?)", (article, pickle.dumps(categ_list)))
+        self.sqlcon.commit()
     def read_links(self, article):
         result = self.sqlcon.execute("select * from links where article=?", (article,)).fetchone()
+        if result == None:
+            return None
+        else:
+            return pickle.loads(result[1])
+    def read_categories(self, article):
+        result = self.sqlcon.execute("select * from categories where article=?", (article,)).fetchone()
         if result == None:
             return None
         else:
@@ -64,28 +74,52 @@ class MwApiInterface:
         else:
             result = None
         if result == None:
-            result = self.raw_query_request( {'titles':title, 'prop':'links', 'plnamespace':namespace, 'pllimit':500} )
+            result = []
+            query_continue = None
+            while True:
+                if query_continue:
+                    result_req = self.raw_query_request( {'titles':title, 'prop':'links', 'plnamespace':namespace, 'pllimit':500, 'plcontinue':query_continue} )
+                else:
+                    result_req = self.raw_query_request( {'titles':title, 'prop':'links', 'plnamespace':namespace, 'pllimit':500} )
+                if self.debug:
+                    print ("Result: " + str(result) )
+                pages = result_req['query']['pages']
+                page_id = list(pages)[0]
+                if page_id == '-1': #Page does not exist
+                    break
+                else:
+                    result.extend([link['title'] for link in pages[page_id]['links']])
+                    if 'query-continue' in result_req:
+                        query_continue = result_req['query-continue']['links']['plcontinue']
+                    else:
+                        break
+            if self.dbif:
+                self.dbif.write_links(title, result)
+        return result
+    def get_page_categories (self, title):
+        """
+        returns a list of all categories of a page
+        """
+        if self.dbif:
+            result = self.dbif.read_categories(title)
+        else:
+            result = None
+        if result == None:
+            result_req = self.raw_query_request( {'titles':title, 'prop':'categories', 'cllimit':500} )
             if self.debug:
-                print ("Result: " + str(result) )
-            pages = result['query']['pages']
+                print ("Result: " + str(result_req) )
+            pages = result_req['query']['pages']
             page_id = list(pages)[0]
             if page_id == '-1': #Page does not exist
                 result = []
             else:
-                result = [link['title'] for link in pages[page_id]['links']]
+                if 'categories' in pages[page_id]:
+                    result = [categ['title'] for categ in pages[page_id]['categories']]
+                else:
+                    result = []
             if self.dbif:
-                self.dbif.write_links(title, result)
+                self.dbif.write_categories(title, result)
         return result
-    def get_page_categories (self, title, namespace=0):
-        """
-        returns a list of all categories of a page
-        """
-        result = self.raw_query_request( {'titles':title, 'prop':'categories', 'plnamespace':namespace, 'pllimit':500} )
-        if self.debug:
-            print ("Result: " + str(result) )
-        pages = result['query']['pages']
-        page_id = list(pages)[0]
-        return [categ['title'] for categ in pages[page_id]['categories']]
     def get_page_uplinks (self, title, namespace=0):
         """
         returns a list of all internal links which go to a page

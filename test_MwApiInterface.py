@@ -44,6 +44,9 @@ class Test_1_Links( unittest.TestCase ):
 
         self.assertTrue ( len(result1) > 5 )
         self.assertEqual( result1, result2 )
+    def test_12_more_than_500_links(self):
+        result = self.api.get_page_links('Liste de photographes')
+        self.assertTrue (len(result) > 500)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
