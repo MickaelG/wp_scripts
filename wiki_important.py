@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 
 import re, sys
 import time, threading
@@ -8,7 +9,7 @@ api = MwApiInterface.MwApiInterface('http://fr.wikipedia.org/w/api.php')
 
 
 def get_article():
-  data = api.raw_request( {'generator':'random', 'action':'query', 'prop':'categories', 'cllimit':500, 'clshow':'!hidden', 'grnnamespace':1} )
+  data = api.raw_query_request( {'generator':'random', 'action':'query', 'prop':'categories', 'cllimit':500, 'clshow':'!hidden', 'grnnamespace':1} )
   (page_id, page_data) = data['query']['pages'].popitem()
   title = page_data['title']
   art_title = re.sub("^Discussion:", "", title)
@@ -40,9 +41,9 @@ def get_article():
   return (art_title, imp)
 
 result = None
-debug = False
+debug = True
 threshold = 10
-def worker(lock):
+def worker(lock, debug=False):
   global result
   (art_title, imp) = get_article()
   if debug:
@@ -56,7 +57,7 @@ def worker(lock):
       if lock.acquire(False):
         result = (art_title, imp)
 
-def get_a_page():
+def get_a_page(debug=False):
   global result
 
   if debug:
@@ -70,7 +71,7 @@ def get_a_page():
     if debug:
       print("New cycle")
     for i_thread in range(20):
-      t = threading.Thread(target=worker, args=(lock,) )
+      t = threading.Thread(target=worker, args=(lock,debug) )
       threads.append(t)
       t.start()
 
@@ -81,5 +82,10 @@ def get_a_page():
     print ("total time:{}".format(te-ts))
   return result
 
+def get_link(debug=False):
+    from urllib.parse import quote
+    page = get_a_page()[0]
+    return "<a href=http://fr.wikipedia.org/wiki/%s>%s</a>" % (quote(page), page)
+
 if __name__ == "__main__":
-  get_a_page()
+  get_a_page(debug=True)
