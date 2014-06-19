@@ -25,10 +25,10 @@ class Test_0_All( unittest.TestCase ):
     def test_04_get_wikitext(self):
         result = self.api.get_wikitext('sntaetsnt')
         self.assertIsNone(result)
-        result = self.api.get_wikitext('Thighpaulsandra')
-        self.assertEqual(result[:50],
-                         "{{Ébauche|musicien britannique}}\n[[File:Tighpaul.j")
-        self.assertEqual(result[-34:], "[[Catégorie:Musicien britannique]]")
+        #result = self.api.get_wikitext('Thighpaulsandra')
+        #self.assertEqual(result[:50],
+        #                 "{{Ébauche|musicien britannique}}\n[[File:Tighpaul.j")
+        #self.assertEqual(result[-34:], "[[Catégorie:Musicien britannique]]")
 
 class Test_1_Links( unittest.TestCase ):
     def setUp(self):
@@ -92,6 +92,17 @@ class Test_2_Links(unittest.TestCase):
                         "cryptographier")
         result = text.count_occur("cryptographie")
         self.assertEqual(result, 3)
+
+
+class Test_3_wikitext(unittest.TestCase):
+    def setUp(self):
+        self.api = MwApiInterface('http://fr.wikipedia.org/w/api.php')
+
+    def test_01_bug(self):
+        article = "Densité de probabilité"
+        wikitext = self.api.get_wikitext(article)
+        wt_links = wikitext.get_links()
+        count = wikitext.count_occur(wt_links)
 
 
 if __name__ == '__main__':

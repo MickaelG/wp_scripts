@@ -28,11 +28,22 @@ class WpEbook():
         #For each article in articles, list of tuples (link, score)
         self.articles_links = {}
 
+    def get_article_links(self, article):
+        links = []
+        wikitext = self.api.get_wikitext(article)
+        wt_links = wikitext.get_links()
+        print("Nb of links: %i / %i" % (len(wt_links), len(set(wt_links))))
+        #print("link subloop at %f" % (time.time() - time0))
+        counts = wikitext.count_occur(wt_links)
+        for (link, count) in zip(wt_links, counts):
+            score = 1 + (count - 1) * 0.1
+            links.append((link, score))
+        self.articles_links[article] = links
+
     def get_suggestions(self, nb_suggestions=10):
-        self._update_articles_links()
         links = {}
 
-        for article in self.articles:
+        for article in self.articles_links:
             for (article_link, score) in self.articles_links[article]:
                 if article_link not in self.articles and \
                    article_link not in self.rejected:
@@ -62,54 +73,10 @@ class WpEbook():
         assert len(result) <= nb_suggestions
         return result
 
-    def _update_articles_links(self):
-        time0 = time.time()
-        for article in self.articles:
-            if article not in self.articles_links:
-                links = []
-                wikitext = self.api.get_wikitext(article)
-                wt_links = wikitext.get_links()
-                print("Nb of links: %i / %i" % (len(wt_links), len(set(wt_links))))
-                print("link subloop at %f" % (time.time() - time0))
-                counts = wikitext.count_occur(wt_links)
-                for (link, count) in zip(wt_links, counts):
-                    score = 1 + (count - 1) * 0.1
-                    links.append((link, score))
-                self.articles_links[article] = links
-                print("link loop5 at %f" % (time.time() - time0))
-        print("End up art after %f" % (time.time() - time0))
-
-    def get_suggestions_links_only(self, nb_suggestions=10):
-        all_links = []
-        for article in self.articles:
-            uplinks = self.api.get_page_links(article)
-            all_links.extend(links)
-
-        links_score = []
-        for link in set(all_links):
-            if link not in self.articles and link not in self.rejected:
-                nb_occur = all_links.count(link)
-                if link in self.link_rand_score:
-                    rand_score = self.link_rand_score[link]
-                else:
-                    rand_score = random.random()
-                    self.link_rand_score[link] = rand_score
-                links_score.append((link, nb_occur + rand_score))
-
-        links_score.sort(key=lambda link: link[1], reverse=True)
-        result = []
-        if nb_suggestions > len(links_score):
-            result = [link[0] for link in links_score]
-        else:
-            result = [link[0] for link in links_score[0:nb_suggestions]]
-
-        assert len(result) <= nb_suggestions
-        return result
-
 
 def main_perf():
     ebook = WpEbook()
-    article = "Dinosaure"
+    article = "Densité de probabilité"
     ebook.articles.append(article)
     #suggestions = ebook.get_suggestions()
 
@@ -118,25 +85,12 @@ def main_perf():
 
     print("Nb of links: %i / %i" % (len(wt_links), len(set(wt_links))))
 
-    time0 = time.time()
-    links1 = []
-    for link in wt_links:
-        nb_occur = wikitext.count_occur(link)
-        score = 1 + (nb_occur - 1) * 0.1
-        links1.append((link, score))
-    print("link loop1 at %f" % (time.time() - time0))
-
-    time0 = time.time()
-    links2 = []
+    links = []
     counts = wikitext.count_occur(wt_links)
-    assert type(counts) == list, type(counts)
-    for (link, count) in zip(wt_links, counts):
-        score = 1 + (count - 1) * 0.1
-        links2.append((link, score))
-    print("link loop2 at %f" % (time.time() - time0))
-
-    assert links1 == links2, str(links1) + str(links2)
-
+    #assert type(counts) == list, type(counts)
+    #for (link, count) in zip(wt_links, counts):
+    #    score = 1 + (count - 1) * 0.1
+    #    links.append((link, score))
 
 class ListModel(QtCore.QAbstractListModel):
     def __init__(self, elem_list, parent=None):
@@ -166,6 +120,36 @@ class ListWidget(QtGui.QListView):
 
     def update_list(self):
         self.model().layoutChanged.emit()
+
+
+class Emitter(QtCore.QObject):
+    signal = QtCore.pyqtSignal(str)
+    sig_add = QtCore.pyqtSignal(str)
+    sig_dont_ex = QtCore.pyqtSignal(str)
+    sig_already = QtCore.pyqtSignal(str)
+
+
+class RetrieveRunner(QtCore.QRunnable):
+    def __init__(self, ebook, article):
+        super().__init__()
+        self.article = article
+        self.ebook = ebook
+        self.emitter = Emitter()
+    def run(self):
+        print("Retrieving article %s in thread" % (self.article))
+        if self.article in self.ebook.articles:
+            self.emitter.sig_already.emit(self.article)
+            return
+
+        article_links = self.ebook.api.get_page_links(self.article)
+        if article_links is None:
+            self.emitter.sig_dont_ex.emit(self.article)
+            return
+        self.emitter.sig_add.emit(self.article)
+
+        self.ebook.get_article_links(self.article)
+        print("End retrieving article %s" % (self.article))
+        self.emitter.signal.emit(self.article)
 
 
 class MainWindow(QtGui.QWidget):
@@ -199,26 +183,43 @@ class MainWindow(QtGui.QWidget):
         self.layout.addLayout(tmplayout, 1, 0)
         self.layout.addWidget(self.sugg_widget)
 
+        self.threadpool = QtCore.QThreadPool.globalInstance()
+        self.threadpool.setMaxThreadCount(10)
+
+    def handle_finished(self):
+        print("Future callback")
+        pass
+
+
     def add_article(self, article=None):
         if article is None:
             article = self.article_edit.text()
-        if article in self.ebook.articles:
-            QtGui.QMessageBox.warning(
-                self, "Warning",
-                "Article {} already in selection".format(article))
-            return
 
-        article_links = self.ebook.api.get_page_links(article)
-        if article_links is None:
-            QtGui.QMessageBox.warning(
-                self, "Warning", "Article {} does not exist".format(article))
-            return
+        retriever = RetrieveRunner(self.ebook, article)
+        retriever.emitter.signal.connect(self.process_article_result)
+        retriever.emitter.sig_add.connect(self.add_art_in_list)
+        retriever.emitter.sig_dont_ex.connect(self.show_dont_ex)
+        retriever.emitter.sig_already.connect(self.show_already)
+        self.threadpool.start(retriever)
 
+    def add_art_in_list(self, article):
         self.ebook.articles.append(article)
         print(self.ebook.articles)
         self.result_widget.update_list()
+
+    def show_dont_ex(self, article):
+            QtGui.QMessageBox.warning(
+                self.parent_widget, "Warning", "Article {} does not exist".format(self.article))
+
+    def show_already(self, article):
+            QtGui.QMessageBox.warning(
+                self.parent_widget, "Warning",
+                "Article {} already in selection".format(self.article))
+
+    def process_article_result(self, article):
+        print("Processing %s" % article)
         self.update_suggestions()
-        print("Article {} added".format(article))
+        print("Suggestions updated after article {}".format(article))
 
     def reject_article(self, article):
         self.ebook.rejected.append(article)
@@ -231,6 +232,7 @@ class MainWindow(QtGui.QWidget):
         return result
 
     def update_suggestions(self):
+        print("Updating suggestions")
         suggestions = self.ebook.get_suggestions()
         print("new suggestions : {}".format(suggestions))
         self.sugg_widget.update(suggestions)
@@ -274,6 +276,8 @@ class SuggestionsWidget(QtGui.QWidget):
                     itemw = layout.itemAt(iw)
                     itemw.widget().setEnabled(False)
                 self.labels[il].setText("")
+
+
 
 
 def main_gui():

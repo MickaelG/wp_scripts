@@ -189,13 +189,9 @@ class WikiText(str):
             text = in_text[:]
             regexp = r"\b("
             for word in text[:-1]:
-                word = word.replace("(", "\(")
-                word = word.replace(")", "\)")
-                regexp += r"%s|" % word
+                regexp += r"%s|" % re.escape(word)
             word = text[-1]
-            word = word.replace("(", "\(")
-            word = word.replace(")", "\)")
-            regexp += r"%s)\b" % word
+            regexp += r"%s)\b" % re.escape(word)
             #print(regexp)
             all_matches = (re.findall(regexp, self, re.I))
             result = [0] * len(text)

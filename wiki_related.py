@@ -25,6 +25,8 @@ def get_insubject_score(article,  subject_list):
     or a list of articles (a score of 1 is assumed in this case)
     """
     links_list = api.get_page_links(article)
+    if links_list is None:
+        return (0, 0)
     nb_of_links = len(links_list)
     score = 0
     for article_link in links_list:
