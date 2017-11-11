@@ -22,7 +22,7 @@ def add_to_json(json_file="wikipedia.json"):
     if today not in data:
         data[today] = get_a_page()[0]
         with open(json_file, "w") as fp:
-            json.dump(data, fp)
+            json.dump(data, fp, indent=4)
     return data
 
 
@@ -32,7 +32,7 @@ def atom():
     result += '<?xml version="1.0" encoding="utf-8"?>\n'
     result += '<feed xmlns="http://www.w3.org/2005/Atom">\n\n'
     result += ' <title>Wikipedia fr</title>\n'
-    for date in data:
+    for date in sorted(data, reverse=True):
         datef = date + "T11:00:00Z"
         title = data[date]
         link = page_to_link(title)
