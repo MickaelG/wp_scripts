@@ -4,6 +4,10 @@ import re, sys
 import time, threading
 import MwApiInterface
 
+from concurrent.futures import ThreadPoolExecutor
+
+import logging
+
 api = MwApiInterface.MwApiInterface('http://fr.wikipedia.org/w/api.php')
 
 
@@ -24,68 +28,48 @@ def get_article():
       if re.search("inconnue$", categ):
         pass
       elif re.search("faible$", categ):
-        if imp<1:
-          imp = 1
+        imp += 1
       elif re.search("moyenne$", categ):
-        if imp<10:
-          imp = 10
+        imp += 10
       elif re.search("élevée$", categ):
-        if imp<100:
-          imp = 100
+        imp += 100
       elif re.search("maximum$", categ):
-        if imp<1000:
-          imp = 1000
+        imp += 1000
       else:
         raise Exception('Unknown importance: {}'.format(categ))
 
   return (art_title, imp)
 
-result = None
-debug = True
-threshold = 10
-def worker(lock, debug=False):
-  global result
-  (art_title, imp) = get_article()
-  if debug:
-    if imp > threshold:
-      print ( "{} ({})".format(art_title, imp) )
-      result = (art_title, imp)
-    else:
-      print ('.')
-  else:
-    if imp > threshold:
-      if lock.acquire(False):
-        result = (art_title, imp)
 
 def get_a_page(debug=False):
-  global result
+  ts = time.time()
 
-  if debug:
-    ts = time.time()
+  executor = ThreadPoolExecutor(max_workers=10)
+  futures = []
+  for ifut in range(100):
+    futures.append(executor.submit(get_article))
 
-  threads = []
-  lock = threading.Lock()
+  max_score = 0
+  max_title = None
+  for future in futures:
+    (title, score) = future.result()
+    if score > max_score:
+        max_score = score
+        max_title = title
 
-  result = None
-  while not result:
-    if debug:
-      print("New cycle")
-    for i_thread in range(20):
-      t = threading.Thread(target=worker, args=(lock,debug) )
-      threads.append(t)
-      t.start()
+  te = time.time()
+  logging.debug("{} ({})".format(max_title, max_score))
+  logging.debug("total time:{}".format(te-ts))
 
-    [t.join() for t in threads]
+  return (max_title, max_score)
 
-  if debug:
-    te = time.time()
-    print ("total time:{}".format(te-ts))
-  return result
 
 def get_link(debug=False):
     from urllib.parse import quote
     page = get_a_page()[0]
     return "<a href=http://fr.wikipedia.org/wiki/%s>%s</a>" % (quote(page), page)
 
+
 if __name__ == "__main__":
+  logging.basicConfig(level=logging.DEBUG)
   get_a_page(debug=True)
